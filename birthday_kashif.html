@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>3D Birthday Card — Happy Birthday Kashif</title>
+
+<!-- Three.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+
+<style>
+  /* Page reset */
+  html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;}
+  body{overflow:hidden;background: radial-gradient(circle at 10% 10%, #210018 0%, #2f0b1f 30%, #0b0820 100%); color:#fff;}
+
+  /* Canvas container */
+  #card-wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+
+  /* Overlay text box */
+  .overlay {
+    position:absolute;
+    width:min(860px,92%);
+    max-width:1100px;
+    text-align:center;
+    pointer-events:none; /* allow clicks to pass to canvas if needed */
+  }
+
+  .headline {
+    margin:0 auto 8px;
+    padding:12px 18px;
+    display:inline-block;
+    background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+    border-radius:14px;
+    border:1px solid rgba(255,215,0,0.18);
+    backdrop-filter: blur(6px);
+    font-weight:700;
+    letter-spacing:0.6px;
+    font-size:20px;
+    color:#ffdca8;
+  }
+
+  .card {
+    margin: 0 auto;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+    border-radius:18px;
+    padding:22px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    pointer-events:auto;
+  }
+
+  h1 {
+    margin: 6px 0 6px;
+    font-size:38px;
+    color: #fff;
+    text-shadow:0 6px 24px rgba(255,0,40,0.08), 0 2px 8px rgba(0,0,0,0.6);
+  }
+
+  p.lead {
+    margin:6px 0 12px;
+    color:#ffece6;
+    font-size:17px;
+    opacity:0.95;
+  }
+
+  .cta {
+    display:inline-block;
+    margin-top:12px;
+    pointer-events:auto;
+  }
+
+  .btn {
+    background: linear-gradient(90deg,#ff5a5a,#ff1f6b);
+    padding:10px 18px;
+    border-radius:10px;
+    border:none;
+    color:white;
+    font-weight:700;
+    cursor:pointer;
+    box-shadow:0 8px 30px rgba(255,20,80,0.16);
+    text-decoration:none;
+  }
+
+  .subtitle {
+    margin-top:10px;
+    font-size:14px;
+    color:#ffd9d9;
+    opacity:0.9;
+  }
+
+  /* small footer note */
+  .foot {
+    position: absolute;
+    bottom:18px;
+    width:100%;
+    text-align:center;
+    color:rgba(255,255,255,0.5);
+    font-size:13px;
+    pointer-events:none;
+  }
+
+  /* Responsive tweak */
+  @media (max-width:560px){
+    h1{font-size:28px}
+    .headline{font-size:16px}
+  }
+
+  /* Confetti canvas top layer (small decorative canvas) */
+  #confetti {
+    position: absolute;
+    inset:0;
+    pointer-events:none;
+  }
+</style>
+</head>
+<body>
+
+<div id="card-wrap">
+  <!-- WebGL canvas will be appended by three.js -->
+  <div class="overlay">
+    <div class="headline">A Special Day — For My Beloved</div>
+
+    <div class="card">
+      <h1>Happy Birthday — <span style="color:#ffd07a">My Beloved Kashif</span></h1>
+      <p class="lead">Wishing you a day filled with love, laughter, and magic. You are my heart — today and always.</p>
+      <div class="cta">
+        <a class="btn" id="playToggle">Pause/Play Animation</a>
+      </div>
+      <div class="subtitle">3D heart of balloons • Golden waving ribbons • Gentle float animation</div>
+    </div>
+  </div>
+</div>
+
+<canvas id="confetti"></canvas>
+
+<script>
+/* ==========================
+   3D Scene: heart balloons + ribbons
+   ========================== */
+
+let scene, camera, renderer, clock, balloonsGroup, ribbons = [], animationOn = true;
+
+function init() {
+  const width = window.innerWidth, height = window.innerHeight;
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(50, width/height, 0.1, 2000);
+  camera.position.set(0, 0, 80);
+
+  renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setSize(width, height);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  document.getElementById('card-wrap').insertBefore(renderer.domElement, document.querySelector('.overlay'));
+
+  // soft ambient + subtle point lights
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const p1 = new THREE.PointLight(0xffb4b4, 0.7, 300);
+  p1.position.set(50, 50, 100);
+  scene.add(p1);
+  const p2 = new THREE.PointLight(0xffe7b4, 0.4, 300);
+  p2.position.set(-60, -40, 80);
+  scene.add(p2);
+
+  // gentle back fog-like effect using large translucent plane
+  const bgGeom = new THREE.PlaneGeometry(1000, 600);
+  const bgMat = new THREE.MeshBasicMaterial({color:0x0b0620, transparent:true, opacity:0.25});
+  const bgPlane = new THREE.Mesh(bgGeom, bgMat);
+  bgPlane.position.set(0,0,-300);
+  scene.add(bgPlane);
+
+  // group that holds balloons
+  balloonsGroup = new THREE.Group();
+  scene.add(balloonsGroup);
+
+  // create balloons in a heart shape
+  createHeartBalloons();
+
+  // create ribbons (curvy golden ribbons hanging)
+  createRibbons();
+
+  // clock for animation
+  clock = new THREE.Clock();
+
+  // handle resize
+  window.addEventListener('resize', onResize);
+
+  // start loop
+  animate();
+}
+
+/* Heart param (classic heart curve scaled) */
+function heartPoint(t, scale=1){
+  // t in [0, 2PI]
+  const x = 16*Math.pow(Math.sin(t),3);
+  const y = 13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t);
+  return new THREE.Vector3(x*scale, y*scale, 0);
+}
+
+function createHeartBalloons(){
+  const balloonGeom = new THREE.SphereGeometry(2.2, 28, 28);
+  // glossy red material
+  const balloonMat = new THREE.MeshStandardMaterial({
+    color: 0xff1f4d,
+    metalness: 0.3,
+    roughness: 0.35,
+    emissive: 0x2b0000,
+    envMapIntensity: 0.7
+  });
+
+  // create many points along heart curve (two passes for fullness)
+  const points = [];
+  const n = 36;
+  for(let i=0;i<n;i++){
+    const t = i / n * Math.PI*2;
+    const p = heartPoint(t, 1.6);
+    points.push(p);
+  }
+  // add interior points for fullness
+  for(let i=0;i<n;i++){
+    const t = i / n * Math.PI*2;
+    const p = heartPoint(t, 1.1 + Math.sin(i*2)*0.35);
+    points.push(p);
+  }
+
+  // jitter and create balloons
+  for(let i=0;i<points.length;i++){
+    const p = points[i].clone();
+    // slight random z and jitter
+    p.z = (Math.random()-0.5)*6;
+    p.x += (Math.random()-0.5)*1.1;
+    p.y += (Math.random()-0.5)*0.9;
+
+    const mesh = new THREE.Mesh(balloonGeom, balloonMat.clone());
+    mesh.material.color.setHex(0xff1f4d + Math.floor(Math.random()*0x001010));
+    mesh.position.copy(p);
+    mesh.userData = {
+      baseY: mesh.position.y,
+      bobPhase: Math.random()*Math.PI*2,
+      bobSpeed: 0.6 + Math.random()*0.8,
+      drift: (Math.random()-0.5)*0.02
+    };
+
+    // small tilt
+    mesh.rotation.x = (Math.random()-0.5)*0.2;
+    mesh.rotation.y = (Math.random()-0.5)*0.5;
+
+    // a small string under balloon
+    addString(mesh);
+
+    balloonsGroup.add(mesh);
+  }
+}
+
+/* add a thin cylinder string under balloon */
+function addString(balloonMesh){
+  const len = 5.6 + Math.random()*1.6;
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, -1.6, 0),
+    new THREE.Vector3(0.4*(Math.random()-0.5), -len*0.4, 0.3*(Math.random()-0.5)),
+    new THREE.Vector3(0.1*(Math.random()-0.5), -len*0.8, -0.5*(Math.random()-0.5)),
+    new THREE.Vector3(0.0, -len, 0)
+  ]);
+  const tubeGeom = new THREE.TubeGeometry(curve, 28, 0.06, 8, false);
+  const mat = new THREE.MeshStandardMaterial({ color:0x222222, metalness:0.2, roughness:0.6 });
+  const tube = new THREE.Mesh(tubeGeom, mat);
+  tube.position.copy(balloonMesh.position);
+  tube.rotation.copy(balloonMesh.rotation);
+  tube.userData = { anchor: balloonMesh };
+  scene.add(tube);
+
+  // add a golden ribbon near bottom of string (waving)
+  const ribbon = createGoldenRibbon(tube);
+  scene.add(ribbon);
+  ribbons.push({ribbon, tube});
+}
+
+/* create a thin wavy golden ribbon mesh under string */
+function createGoldenRibbon(tubeMesh){
+  // ribbon as ribbon-like plane that will be animated by vertex displacement
+  const seg = 40;
+  const width = 0.8;
+  const length = 6.5;
+  const geom = new THREE.PlaneGeometry(width, length, 6, seg);
+  // rotate plane to hang vertically
+  geom.rotateX(-Math.PI/2);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffd575,
+    metalness: 0.9,
+    roughness: 0.25,
+    side: THREE.DoubleSide
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.userData = { tOffset: Math.random() * 1000, speed: 0.9 + Math.random()*0.8, tube: tubeMesh };
+  mesh.position.copy(tubeMesh.position).add(new THREE.Vector3(0,-4.4,0));
+  mesh.rotation.z = (Math.random()-0.5)*0.4;
+  mesh.rotation.x = 0.1;
+  return mesh;
+}
+
+/* create a few extra long ribbons anchored in center for heart look */
+function createRibbons(){
+  for(let i=0;i<6;i++){
+    const ribbon = createGoldenRibbon({position: new THREE.Vector3( (Math.random()-0.5)*6, -6, (Math.random()-0.5)*4)});
+    scene.add(ribbon);
+    ribbons.push({ribbon, tube:{position: ribbon.position}});
+  }
+}
+
+/* animation loop */
+function animate(){
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  // update balloons bobbing
+  balloonsGroup.children.forEach((b, idx) => {
+    if(!animationOn) return;
+    const ud = b.userData;
+    b.position.y = ud.baseY + Math.sin(t*ud.bobSpeed + ud.bobPhase)*0.6;
+    b.rotation.z += ud.drift * 0.02;
+    // slight breathing scale
+    const s = 1 + 0.02*Math.sin(t*1.4 + ud.bobPhase);
+    b.scale.set(s,s,s);
+  });
+
+  // update ribbons: simple waving by vertex displacement
+  ribbons.forEach((rObj, idx) => {
+    const mesh = rObj.ribbon;
+    if(!mesh || !mesh.geometry) return;
+    const time = t * (mesh.userData?.speed || 1) + (mesh.userData?.tOffset || 0);
+    const pos = rObj.tube.position;
+    // anchor ribbon near tube position
+    mesh.position.lerp(new THREE.Vector3(pos.x, pos.y - 3.2, pos.z), 0.08);
+
+    // bend vertices for waving effect
+    const geom = mesh.geometry;
+    const attr = geom.attributes.position;
+    for(let i=0;i<attr.count;i++){
+      const vx = attr.getX(i);
+      const vy = attr.getY(i);
+      const vz = attr.getZ(i);
+      const wave = Math.sin((vy*0.8) + time*2 + vx*5) * 0.12 * (1 + Math.sin(time*0.6)*0.4);
+      attr.setZ(i, vz + wave);
+    }
+    attr.needsUpdate = true;
+  });
+
+  // camera subtle orbiting
+  if(animationOn){
+    const camOrbitRadius = 80;
+    camera.position.x = Math.sin(t*0.12)*20;
+    camera.position.y = Math.sin(t*0.06)*6;
+    camera.lookAt(0,0,0);
+  }
+
+  renderer.render(scene, camera);
+}
+
+/* resize */
+function onResize(){
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w,h);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+
+/* toggle animation */
+document.getElementById('playToggle').addEventListener('click', () => {
+  animationOn = !animationOn;
+});
+
+/* init + start */
+init();
+
+/* ========== small confetti layer for background sparkle ========== */
+(function confetti(){
+  const cvs = document.getElementById('confetti');
+  const ctx = cvs.getContext('2d');
+  function resize(){
+    cvs.width = innerWidth;
+    cvs.height = innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const pieces = [];
+  for(let i=0;i<120;i++){
+    pieces.push({
+      x: Math.random()*cvs.width,
+      y: Math.random()*cvs.height,
+      r: 2 + Math.random()*4,
+      vx: (Math.random()-0.5)*0.6,
+      vy: 0.4 + Math.random()*1.2,
+      color: ['#ffd9d2','#fff2cc','#ffd07a','#ffe6f0','#ffb3c2'][Math.floor(Math.random()*5)],
+      rot: Math.random()*Math.PI
+    });
+  }
+  function tick(){
+    ctx.clearRect(0,0,cvs.width,cvs.height);
+    for(const p of pieces){
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += 0.03;
+      if(p.y > cvs.height + 20){ p.y = -20; p.x = Math.random()*cvs.width; }
+      const cx = p.x, cy = p.y;
+      ctx.save();
+      ctx.translate(cx,cy);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      roundRect(ctx, -p.r, -p.r, p.r*2, p.r*1.2, p.r*0.6, true, false);
+      ctx.restore();
+    }
+    requestAnimationFrame(tick);
+  }
+  function roundRect(ctx,x,y,w,h,r,fill,stroke){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+    if(fill){ ctx.fill(); }
+    if(stroke){ ctx.stroke(); }
+  }
+  tick();
+})();
+</script>
+
+</body>
+</html>
